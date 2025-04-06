@@ -1,14 +1,11 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
 
-import SimulationControls from "../components/SimulationControls";
-import SimulationDisplay from "../components/SimulationDisplay";
-
-const RunScreen = () => {
+const SimulationControls = () => {
   return (
     <View style={styles.container}>
-      <SimulationDisplay />
-      <SimulationControls />
+      <Text>Simulation Display</Text>
+      <StatusBar style="auto" />
     </View>
   );
 };
@@ -22,4 +19,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default RunScreen;
+export default SimulationControls;
