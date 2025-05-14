@@ -1,16 +1,22 @@
-import React, { useEffect } from "react";
-import { StyleSheet, View, Text } from "react-native";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import SimulationList from "../components/SimulationList";
 import { useSavedSimulations } from "../context/SavedSimulationsContext";
 
 const DefineScreen = () => {
   const { forceRefresh } = useSavedSimulations();
 
-  // Force a refresh when the screen is focused
-  useEffect(() => {
-    // Refresh saved simulations data when component mounts
-    forceRefresh();
-  }, []);
+  // Force a refresh EVERY time the screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("DefineScreen focused - refreshing simulations");
+      forceRefresh();
+
+      // Optional: return cleanup function
+      return () => {};
+    }, [])
+  );
 
   return (
     <View style={styles.container}>
