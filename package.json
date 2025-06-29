@@ -20,9 +20,10 @@
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-native": "0.79.2",
+    "react-native-gesture-handler": "~2.24.0",
     "react-native-web": "~0.20.0",
-    "undefined": "react-navigation/native",
-    "react-native-gesture-handler": "~2.24.0"
+    "simjs": "^2.0.3",
+    "undefined": "react-navigation/native"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
