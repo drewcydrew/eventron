@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "desim",
+    "name": "eventron",
     "slug": "desim",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.drew92.desim",
+      "bundleIdentifier": "com.drew92.eventron",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,7 +24,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.drew92.eventron"
     },
     "web": {
       "favicon": "./assets/favicon.png"
