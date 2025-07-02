@@ -1,53 +1,48 @@
-import "react-native-gesture-handler";
-import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Ionicons } from "@expo/vector-icons";
-
-import BlankScreen from "./src/screens/DefineScreen";
-import SecondScreen from "./src/screens/RunScreen";
-
-export type TabParamList = {
-  Define: undefined;
-  Run: undefined;
-};
-
-const Tab = createBottomTabNavigator<TabParamList>();
+import { StatusBar } from "expo-status-bar";
+import { StyleSheet, Text, View, ScrollView } from "react-native";
+import { SimulationProvider } from "./contexts/SimulationContext";
+import { SimulationDisplay } from "./components/SimulationDisplay";
+import { SimulationControls } from "./components/SimulationControls";
+import { GanttChart } from "./components/GanttChart";
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={{
-          tabBarActiveTintColor: "#333333",
-          tabBarInactiveTintColor: "#666666",
-          tabBarStyle: {
-            borderTopColor: "rgba(0, 0, 0, 0.1)",
-            borderTopWidth: 0.5,
-          },
-        }}
-      >
-        <Tab.Screen
-          name="Define"
-          component={BlankScreen}
-          options={{
-            headerShown: false,
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="build-outline" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tab.Screen
-          name="Run"
-          component={SecondScreen}
-          options={({ navigation, route }) => ({
-            headerShown: false,
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="bar-chart-outline" size={size} color={color} />
-            ),
-          })}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <SimulationProvider>
+      <View style={styles.container}>
+        <Text style={styles.title}>Person Movement Simulation</Text>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          bounces={false}
+        >
+          <SimulationDisplay />
+          <SimulationControls />
+          <GanttChart />
+        </ScrollView>
+        <StatusBar style="auto" />
+      </View>
+    </SimulationProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f0f0f0",
+    padding: 20,
+    paddingTop: 60,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+});
