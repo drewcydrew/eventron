@@ -10,6 +10,7 @@ import {
   DiscreteEventEngine,
   TravelerState,
 } from "../engines/DiscreteEventEngine";
+import { useTimelineEvents } from "./TimelineEventsContext";
 
 interface Location {
   id: string;
@@ -60,9 +61,12 @@ interface SimulationProviderProps {
   children: ReactNode;
 }
 
-export const SimulationProvider: React.FC<SimulationProviderProps> = ({
+// Create the inner component that has access to timeline context
+const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
   children,
 }) => {
+  const timelineEvents = useTimelineEvents();
+
   const [locationA, setLocationA] = useState<Location>({
     id: "A",
     x: 40,
@@ -85,7 +89,7 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
   });
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationComplete, setSimulationComplete] = useState(false);
-  const [speed, setSpeedState] = useState(1); // This is now simulation speed
+  const [speed, setSpeedState] = useState(1);
   const [ganttClearTrigger, setGanttClearTrigger] = useState(0);
   const [simulationTime, setSimulationTime] = useState(0);
   const [people, setPeople] = useState<TravelerState[]>([]);
@@ -99,12 +103,12 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
   const engineRef = useRef<DiscreteEventEngine>(new DiscreteEventEngine());
   const nextIdRef = useRef(1);
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const previousPeopleRef = useRef<Map<number, string>>(new Map());
 
   // Set up event observers
   useEffect(() => {
     const engine = engineRef.current;
 
-    // Observer for all events - used by Gantt chart (update event names)
     engine.onEvent("TRAVELER_START_JOURNEY", () => {
       console.log("Event: TRAVELER_START_JOURNEY");
     });
@@ -148,6 +152,47 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
     };
   }, []);
 
+  // Track people changes and dispatch timeline events
+  useEffect(() => {
+    people.forEach((person) => {
+      const previousStage = previousPeopleRef.current.get(person.id);
+      const currentStage = person.stage;
+
+      // Only dispatch event if stage has changed
+      if (previousStage !== currentStage) {
+        console.log(
+          `Traveler ${person.id} stage changed: ${previousStage} -> ${currentStage}`
+        );
+
+        timelineEvents.addEvent({
+          travelerId: person.id,
+          eventType: `stage_${currentStage}`,
+          timestamp: Date.now(),
+          stage: currentStage,
+          data: { x: person.x, y: person.y, hasBox: person.hasBox },
+        });
+
+        // Update the previous stage tracker
+        previousPeopleRef.current.set(person.id, currentStage);
+      }
+    });
+
+    // Clean up removed travelers
+    const currentTravelerIds = new Set(people.map((p) => p.id));
+    for (const [id] of previousPeopleRef.current) {
+      if (!currentTravelerIds.has(id)) {
+        // Traveler completed their journey
+        timelineEvents.addEvent({
+          travelerId: id,
+          eventType: "stage_completed",
+          timestamp: Date.now(),
+          stage: "completed",
+        });
+        previousPeopleRef.current.delete(id);
+      }
+    }
+  }, [people, timelineEvents]);
+
   // Update locations in engine when they change
   useEffect(() => {
     engineRef.current.updateLocations(
@@ -165,9 +210,8 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
     setSimulationComplete(false);
 
     const engine = engineRef.current;
-    engine.setSimulationSpeed(speed); // Use simulation speed
+    engine.setSimulationSpeed(speed);
 
-    // Only spawn initial travelers if this is the first time starting
     if (!engine.getHasBeenInitialized()) {
       console.log(`Spawning ${startingTravelers} initial travelers`);
       for (let i = 0; i < startingTravelers; i++) {
@@ -178,7 +222,6 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
 
     engine.start();
 
-    // Update display at regular intervals
     updateIntervalRef.current = setInterval(() => {
       setSimulationTime(engine.getCurrentTime());
       setPeople(engine.getTravelerStates());
@@ -206,19 +249,19 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
     setBoxStatus({ availableBoxes: startingBoxes, totalProcessed: 0 });
     nextIdRef.current = 1;
     setGanttClearTrigger((prev) => prev + 1);
+    previousPeopleRef.current.clear();
+    timelineEvents.clearAllEvents();
   };
 
   const addTraveler = () => {
     const id = nextIdRef.current++;
     engineRef.current.addTraveler(id);
-
-    // Update display immediately
     setPeople(engineRef.current.getTravelerStates());
   };
 
   const setSpeed = (newSpeed: number) => {
     setSpeedState(newSpeed);
-    engineRef.current.setSimulationSpeed(newSpeed); // Update simulation speed
+    engineRef.current.setSimulationSpeed(newSpeed);
   };
 
   const setStartingTravelers = (count: number) => {
@@ -283,4 +326,11 @@ export const SimulationProvider: React.FC<SimulationProviderProps> = ({
       {children}
     </SimulationContext.Provider>
   );
+};
+
+// Export the wrapper that ensures timeline context is available
+export const SimulationProvider: React.FC<SimulationProviderProps> = ({
+  children,
+}) => {
+  return <SimulationProviderInner>{children}</SimulationProviderInner>;
 };

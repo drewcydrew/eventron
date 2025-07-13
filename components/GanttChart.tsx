@@ -1,220 +1,21 @@
 import React, { useEffect, useState, useRef } from "react";
 import { StyleSheet, Text, View, TouchableOpacity, Alert } from "react-native";
+import { useTimelineEvents } from "../contexts/TimelineEventsContext";
 import { useSimulation } from "../contexts/SimulationContext";
 
-interface Activity {
-  id: string;
-  travelerId: number;
-  name: string;
-  startTime: number;
-  endTime?: number;
-  color: string;
-}
-
 export const GanttChart: React.FC = () => {
-  const { people, isSimulating, ganttClearTrigger, simulationTime } =
-    useSimulation();
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [completedTravelers, setCompletedTravelers] = useState<Set<number>>(
-    new Set()
-  );
-  const travelerStagesRef = useRef<Map<number, string>>(new Map());
+  const { simulationTime } = useSimulation();
+  const { activities, completedTravelers, exportTimelineData, events } =
+    useTimelineEvents();
 
-  // Clear all data when reset is triggered
+  // Debug: Log when activities change
   useEffect(() => {
-    if (ganttClearTrigger > 0) {
-      setActivities([]);
-      setCompletedTravelers(new Set());
-      travelerStagesRef.current.clear();
+    console.log(`GanttChart: Activities updated, count: ${activities.length}`);
+    console.log(`GanttChart: Events count: ${events.length}`);
+    if (activities.length > 0) {
+      console.log("Latest activities:", activities.slice(-3));
     }
-  }, [ganttClearTrigger]);
-
-  useEffect(() => {
-    const now = Date.now();
-    const currentTravelerIds = new Set(people.map((p) => p.id));
-    const previousTravelerIds = new Set(travelerStagesRef.current.keys());
-
-    // Check for travelers that have been removed (completed their journey)
-    for (const id of previousTravelerIds) {
-      if (!currentTravelerIds.has(id)) {
-        setCompletedTravelers((prev) => new Set([...prev, id]));
-        // End any ongoing activities for this traveler
-        setActivities((prev) =>
-          prev.map((activity) =>
-            activity.travelerId === id && !activity.endTime
-              ? { ...activity, endTime: now }
-              : activity
-          )
-        );
-      }
-    }
-
-    people.forEach((person) => {
-      const previousStage = travelerStagesRef.current.get(person.id) || "none";
-      const currentStage = person.stage;
-
-      if (previousStage !== currentStage) {
-        // Stage changed, end previous activity and start new one
-        if (previousStage !== "none" && previousStage !== "idle") {
-          setActivities((prev) =>
-            prev.map((activity) =>
-              activity.travelerId === person.id && !activity.endTime
-                ? { ...activity, endTime: now }
-                : activity
-            )
-          );
-        }
-
-        // Start new activity based on current stage
-        if (currentStage === "movingToC") {
-          const activityName =
-            previousStage === "processingAtB1" ||
-            previousStage === "processingAtB2"
-              ? "Return to C"
-              : "Travel to C";
-          const color =
-            previousStage === "processingAtB1" ||
-            previousStage === "processingAtB2"
-              ? "#28B946" // Darker green for return journey
-              : "#32D74B"; // Regular green for initial journey
-
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-moveToC-${now}`,
-              travelerId: person.id,
-              name: activityName,
-              startTime: now,
-              color: color,
-            },
-          ]);
-        } else if (currentStage === "collectingAtC") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-collectingC-${now}`,
-              travelerId: person.id,
-              name: "Collecting Box",
-              startTime: now,
-              color: "#28CD41",
-            },
-          ]);
-        } else if (currentStage === "movingToB1") {
-          const activityName =
-            previousStage === "movingToB2" ||
-            previousStage === "waitingAtB2" ||
-            previousStage === "processingAtB2"
-              ? "Switch to B1"
-              : "Travel to B1";
-          const color =
-            previousStage === "movingToB2" ||
-            previousStage === "waitingAtB2" ||
-            previousStage === "processingAtB2"
-              ? "#9933FF" // Purple for switching
-              : "#007AFF"; // Blue for initial travel
-
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-moveToB1-${now}`,
-              travelerId: person.id,
-              name: activityName,
-              startTime: now,
-              color: color,
-            },
-          ]);
-        } else if (currentStage === "movingToB2") {
-          const activityName =
-            previousStage === "movingToB1" ||
-            previousStage === "waitingAtB1" ||
-            previousStage === "processingAtB1"
-              ? "Switch to B2"
-              : "Travel to B2";
-          const color =
-            previousStage === "movingToB1" ||
-            previousStage === "waitingAtB1" ||
-            previousStage === "processingAtB1"
-              ? "#CC33FF" // Light purple for switching
-              : "#0099FF"; // Light blue for initial travel
-
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-moveToB2-${now}`,
-              travelerId: person.id,
-              name: activityName,
-              startTime: now,
-              color: color,
-            },
-          ]);
-        } else if (currentStage === "waitingAtB1") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-waitingB1-${now}`,
-              travelerId: person.id,
-              name: "Waiting at B1",
-              startTime: now,
-              color: "#FF6B6B", // Red color for waiting
-            },
-          ]);
-        } else if (currentStage === "waitingAtB2") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-waitingB2-${now}`,
-              travelerId: person.id,
-              name: "Waiting at B2",
-              startTime: now,
-              color: "#FF4444", // Slightly different red for B2 waiting
-            },
-          ]);
-        } else if (currentStage === "processingAtB1") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-processingB1-${now}`,
-              travelerId: person.id,
-              name: "Processing at B1",
-              startTime: now,
-              color: "#FF9500",
-            },
-          ]);
-        } else if (currentStage === "processingAtB2") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-processingB2-${now}`,
-              travelerId: person.id,
-              name: "Processing at B2",
-              startTime: now,
-              color: "#FF7700", // Slightly different orange for B2 processing
-            },
-          ]);
-        } else if (currentStage === "returningToA") {
-          setActivities((prev) => [
-            ...prev,
-            {
-              id: `${person.id}-return-${now}`,
-              travelerId: person.id,
-              name: "Return to A",
-              startTime: now,
-              color: "#34C759",
-            },
-          ]);
-        }
-
-        travelerStagesRef.current.set(person.id, currentStage);
-      }
-    });
-
-    // Only clean up stages for travelers that no longer exist
-    for (const [id] of travelerStagesRef.current) {
-      if (!currentTravelerIds.has(id)) {
-        travelerStagesRef.current.delete(id);
-      }
-    }
-  }, [people]);
+  }, [activities, events]);
 
   const renderTravelerRow = (travelerId: number) => {
     const travelerActivities = activities.filter(
@@ -299,35 +100,7 @@ export const GanttChart: React.FC = () => {
       return;
     }
 
-    // Prepare export data
-    const exportActivities = activities.map((activity) => ({
-      travelerId: activity.travelerId,
-      travelerName: `Traveler ${activity.travelerId}`,
-      activityName: activity.name,
-      startTime: new Date(activity.startTime).toISOString(),
-      endTime: activity.endTime
-        ? new Date(activity.endTime).toISOString()
-        : "In Progress",
-      duration: activity.endTime
-        ? activity.endTime - activity.startTime
-        : Date.now() - activity.startTime,
-      color: activity.color,
-    }));
-
-    // Create summary statistics
-    const summary = {
-      totalActivities: activities.length,
-      uniqueTravelers: allTravelerIds.length,
-      completedActivities: activities.filter((a) => a.endTime).length,
-      inProgressActivities: activities.filter((a) => !a.endTime).length,
-      exportDate: new Date().toISOString(),
-      simulationTimeAtExport: simulationTime,
-    };
-
-    const exportData = {
-      summary,
-      activities: exportActivities,
-    };
+    const exportData = exportTimelineData();
 
     // Convert to formatted JSON string
     const jsonString = JSON.stringify(exportData, null, 2);
@@ -360,6 +133,7 @@ export const GanttChart: React.FC = () => {
           {
             text: "Copy Summary",
             onPress: () => {
+              const summary = exportData.summary;
               const summaryText = `Timeline Export Summary:
 - Total Activities: ${summary.totalActivities}
 - Unique Travelers: ${summary.uniqueTravelers}
@@ -389,6 +163,12 @@ export const GanttChart: React.FC = () => {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Debug info */}
+      <Text style={styles.debugText}>
+        Events: {events.length} | Activities: {activities.length} | Travelers:{" "}
+        {allTravelerIds.length}
+      </Text>
 
       {allTravelerIds.length > 0 ? (
         <View style={styles.chart}>
@@ -494,5 +274,11 @@ const styles = StyleSheet.create({
     color: "#666",
     fontStyle: "italic",
     padding: 20,
+  },
+  debugText: {
+    fontSize: 10,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 10,
   },
 });

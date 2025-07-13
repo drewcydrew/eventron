@@ -7,15 +7,9 @@ export const SimulationControls: React.FC = () => {
     people,
     isSimulating,
     simulationComplete,
-    speed,
     boxStatus,
     startingTravelers,
     startingBoxes,
-    startSimulation,
-    stopSimulation,
-    resetSimulation,
-    addTraveler,
-    setSpeed,
     setStartingTravelers,
     setStartingBoxes,
   } = useSimulation();
@@ -53,132 +47,135 @@ export const SimulationControls: React.FC = () => {
     return `${people.length} travelers - Boxes at C: ${boxStatus.availableBoxes}, Processed: ${boxStatus.totalProcessed}/${startingBoxes} | Idle: ${idle}, To B1: ${movingToB1}, To B2: ${movingToB2}, B1 Queue: ${waitingB1}, B1 Proc: ${processingB1}, B2 Queue: ${waitingB2}, B2 Proc: ${processingB2}, Returning: ${returning}`;
   };
 
-  const speedOptions = [0.25, 0.5, 1, 2, 4]; // Better simulation speed options
-
   return (
     <View style={styles.container}>
-      <Text style={styles.status}>Status: {getStatusText()}</Text>
-      {isSimulating && !simulationComplete && (
-        <Text style={styles.simulationStatus}>
-          🏃 Simulation Running at {speed}x speed
-        </Text>
-      )}
-      {simulationComplete && (
-        <Text style={styles.completedStatus}>
-          ✅ Simulation Completed Successfully!
-        </Text>
-      )}
+      {/* Status Display */}
+      <View style={styles.statusSection}>
+        <Text style={styles.sectionTitle}>Simulation Status</Text>
+        <Text style={styles.status}>{getStatusText()}</Text>
+        {isSimulating && !simulationComplete && (
+          <Text style={styles.simulationStatus}>🏃 Simulation Running</Text>
+        )}
+        {simulationComplete && (
+          <Text style={styles.completedStatus}>
+            ✅ Simulation Completed Successfully!
+          </Text>
+        )}
+      </View>
 
       {/* Configuration Controls */}
-      {!isSimulating && (
-        <View style={styles.configSection}>
-          <Text style={styles.configTitle}>Simulation Configuration</Text>
-
-          <View style={styles.configRow}>
-            <Text style={styles.configLabel}>Starting Travelers:</Text>
-            <View style={styles.numberControls}>
-              <TouchableOpacity
-                style={styles.numberButton}
-                onPress={() =>
-                  setStartingTravelers(Math.max(1, startingTravelers - 1))
-                }
-              >
-                <Text style={styles.numberButtonText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.numberDisplay}>{startingTravelers}</Text>
-              <TouchableOpacity
-                style={styles.numberButton}
-                onPress={() =>
-                  setStartingTravelers(Math.min(10, startingTravelers + 1))
-                }
-              >
-                <Text style={styles.numberButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.configRow}>
-            <Text style={styles.configLabel}>Starting Boxes:</Text>
-            <View style={styles.numberControls}>
-              <TouchableOpacity
-                style={styles.numberButton}
-                onPress={() => setStartingBoxes(Math.max(1, startingBoxes - 1))}
-              >
-                <Text style={styles.numberButtonText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.numberDisplay}>{startingBoxes}</Text>
-              <TouchableOpacity
-                style={styles.numberButton}
-                onPress={() =>
-                  setStartingBoxes(Math.min(20, startingBoxes + 1))
-                }
-              >
-                <Text style={styles.numberButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Speed Control */}
-      <View style={styles.speedControl}>
-        <Text style={styles.speedLabel}>
-          Simulation Speed: {speed.toFixed(2)}x
+      <View style={styles.configSection}>
+        <Text style={styles.sectionTitle}>Initial Configuration</Text>
+        <Text style={styles.configNote}>
+          {isSimulating
+            ? "Configuration locked during simulation"
+            : "Adjust settings before starting simulation"}
         </Text>
-        <View style={styles.speedButtons}>
-          {speedOptions.map((speedOption) => (
+
+        <View style={styles.configRow}>
+          <Text style={styles.configLabel}>Starting Travelers:</Text>
+          <View style={styles.numberControls}>
             <TouchableOpacity
-              key={speedOption}
               style={[
-                styles.speedButton,
-                speed === speedOption && styles.activeSpeedButton,
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
               ]}
-              onPress={() => setSpeed(speedOption)}
+              onPress={() =>
+                !isSimulating &&
+                setStartingTravelers(Math.max(1, startingTravelers - 1))
+              }
+              disabled={isSimulating}
             >
               <Text
                 style={[
-                  styles.speedButtonText,
-                  speed === speedOption && styles.activeSpeedButtonText,
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
                 ]}
               >
-                {speedOption}x
+                -
               </Text>
             </TouchableOpacity>
-          ))}
+            <Text style={styles.numberDisplay}>{startingTravelers}</Text>
+            <TouchableOpacity
+              style={[
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
+              ]}
+              onPress={() =>
+                !isSimulating &&
+                setStartingTravelers(Math.min(10, startingTravelers + 1))
+              }
+              disabled={isSimulating}
+            >
+              <Text
+                style={[
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
+                ]}
+              >
+                +
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.configRow}>
+          <Text style={styles.configLabel}>Starting Boxes:</Text>
+          <View style={styles.numberControls}>
+            <TouchableOpacity
+              style={[
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
+              ]}
+              onPress={() =>
+                !isSimulating &&
+                setStartingBoxes(Math.max(1, startingBoxes - 1))
+              }
+              disabled={isSimulating}
+            >
+              <Text
+                style={[
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
+                ]}
+              >
+                -
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.numberDisplay}>{startingBoxes}</Text>
+            <TouchableOpacity
+              style={[
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
+              ]}
+              onPress={() =>
+                !isSimulating &&
+                setStartingBoxes(Math.min(20, startingBoxes + 1))
+              }
+              disabled={isSimulating}
+            >
+              <Text
+                style={[
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
+                ]}
+              >
+                +
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
-      {/* Main Controls */}
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.button, styles.addButton]}
-          onPress={addTraveler}
-        >
-          <Text style={styles.buttonText}>Add Traveler</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, styles.startButton]}
-          onPress={startSimulation}
-          disabled={isSimulating}
-        >
-          <Text style={styles.buttonText}>Start</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, styles.stopButton]}
-          onPress={stopSimulation}
-          disabled={!isSimulating}
-        >
-          <Text style={styles.buttonText}>Stop</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, styles.resetButton]}
-          onPress={resetSimulation}
-        >
-          <Text style={styles.buttonText}>Reset</Text>
-        </TouchableOpacity>
+      {/* Instructions */}
+      <View style={styles.instructionsSection}>
+        <Text style={styles.sectionTitle}>Instructions</Text>
+        <Text style={styles.instructionText}>
+          • Configure initial settings above{"\n"}• Use controls at bottom to
+          manage simulation{"\n"}• Switch to Simulation tab to view animation
+          {"\n"}• Switch to Timeline tab to see activity charts{"\n"}• Drag
+          locations when simulation is stopped
+        </Text>
       </View>
     </View>
   );
@@ -186,142 +183,101 @@ export const SimulationControls: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 180,
-    justifyContent: "space-between",
-    paddingVertical: 10,
+    flex: 1,
+    padding: 10,
+  },
+  statusSection: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
     marginBottom: 10,
+    color: "#333",
   },
   status: {
-    textAlign: "center",
-    fontSize: 16,
-    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#666",
   },
   simulationStatus: {
-    textAlign: "center",
     fontSize: 14,
     color: "#34C759",
     fontWeight: "500",
-    marginTop: 5,
+    marginTop: 8,
   },
   completedStatus: {
-    textAlign: "center",
     fontSize: 14,
     color: "#34C759",
     fontWeight: "bold",
-    marginTop: 5,
+    marginTop: 8,
   },
   configSection: {
-    backgroundColor: "rgba(0, 0, 0, 0.05)",
-    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderRadius: 10,
     padding: 15,
-    marginVertical: 10,
+    marginBottom: 15,
   },
-  configTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 10,
+  configNote: {
+    fontSize: 12,
+    color: "#666",
+    fontStyle: "italic",
+    marginBottom: 15,
   },
   configRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 15,
   },
   configLabel: {
     fontSize: 14,
     fontWeight: "500",
     flex: 1,
+    color: "#333",
   },
   numberControls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
   numberButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#007AFF",
     justifyContent: "center",
     alignItems: "center",
+  },
+  disabledButton: {
+    backgroundColor: "#C7C7CC",
   },
   numberButtonText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
   },
+  disabledText: {
+    color: "#8E8E93",
+  },
   numberDisplay: {
     fontSize: 16,
     fontWeight: "bold",
-    minWidth: 30,
+    minWidth: 32,
     textAlign: "center",
-  },
-  speedControl: {
-    alignItems: "center",
-    marginTop: 15,
-    paddingHorizontal: 20,
-  },
-  speedLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginBottom: 10,
-  },
-  speedButtons: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 10,
-  },
-  speedButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#E5E5E5",
-    minWidth: 40,
-    alignItems: "center",
-  },
-  activeSpeedButton: {
-    backgroundColor: "#007AFF",
-  },
-  speedButtonText: {
-    fontSize: 12,
-    fontWeight: "500",
     color: "#333",
   },
-  activeSpeedButtonText: {
-    color: "white",
+  instructionsSection: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 15,
   },
-  controls: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 20,
-    paddingHorizontal: 10,
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  button: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 8,
-    minWidth: 70,
-    alignItems: "center",
-  },
-  addButton: {
-    backgroundColor: "#5856D6",
-  },
-  startButton: {
-    backgroundColor: "#34C759",
-  },
-  stopButton: {
-    backgroundColor: "#FF9500",
-  },
-  resetButton: {
-    backgroundColor: "#FF3B30",
-  },
-  buttonText: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 16,
+  instructionText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#666",
   },
 });
