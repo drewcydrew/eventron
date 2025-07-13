@@ -16,6 +16,52 @@ export const SimulationDisplay: React.FC = () => {
     updateProcessingStationLocation,
   } = useSimulation();
 
+  // Get station states from the engine
+  const [stationStates, setStationStates] = React.useState<Map<string, any>>(
+    new Map()
+  );
+
+  React.useEffect(() => {
+    // This would ideally come from the simulation context
+    // For now, we'll derive state from people data
+    const newStates = new Map();
+
+    processingStations.forEach((station) => {
+      // Check if any traveler is processing at this station
+      const processingTraveler = people.find(
+        (p) => p.stage === `processingAt${station.id}`
+      );
+      // Check if any traveler is moving to this station (claimed)
+      const claimedTraveler = people.find(
+        (p) => p.stage === `movingTo${station.id}`
+      );
+
+      if (processingTraveler) {
+        newStates.set(station.id, "active");
+      } else if (claimedTraveler) {
+        newStates.set(station.id, "claimed");
+      } else {
+        newStates.set(station.id, "available");
+      }
+    });
+
+    setStationStates(newStates);
+  }, [people, processingStations]);
+
+  const getStationStyle = (stationId: string) => {
+    const state = stationStates.get(stationId) || "available";
+    switch (state) {
+      case "available":
+        return styles.stationAvailable;
+      case "claimed":
+        return styles.stationClaimed;
+      case "active":
+        return styles.stationActive;
+      default:
+        return styles.stationAvailable;
+    }
+  };
+
   const panResponderA = PanResponder.create({
     onStartShouldSetPanResponder: () => !isSimulating,
     onMoveShouldSetPanResponder: () => !isSimulating,
@@ -132,6 +178,7 @@ export const SimulationDisplay: React.FC = () => {
             { left: station.x, top: station.y },
             !isSimulating && styles.draggable,
             styles.processingStation,
+            getStationStyle(station.id),
           ]}
           {...createStationPanResponder(station.id).panHandlers}
         >
@@ -174,8 +221,8 @@ export const SimulationDisplay: React.FC = () => {
       {/* Debug info */}
       <View style={styles.debugInfo}>
         <Text style={styles.debugText}>
-          Time: {simulationTime.toFixed(0)}ms | People: {people.length} |
-          Stations: {processingStations.length}
+          Boxes Remaining: {boxStatus.availableBoxes} | People: {people.length}{" "}
+          | Stations: {processingStations.length}
         </Text>
       </View>
     </View>
@@ -280,7 +327,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   processingStation: {
-    backgroundColor: "#FF9500", // Orange for processing stations
+    backgroundColor: "#FF9500", // Default orange for processing stations
+  },
+  stationAvailable: {
+    backgroundColor: "#34C759", // Green for available
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  stationClaimed: {
+    backgroundColor: "#FF9500", // Orange for claimed
+    borderWidth: 2,
+    borderColor: "#FFD60A",
+  },
+  stationActive: {
+    backgroundColor: "#FF3B30", // Red for active
+    borderWidth: 2,
+    borderColor: "#FF6B6B",
   },
   completed: {
     backgroundColor: "#34C759", // Green for completed

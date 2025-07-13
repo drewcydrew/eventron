@@ -24,7 +24,9 @@ export interface ProcessingStation {
   id: string;
   x: number;
   y: number;
+  state: 'available' | 'claimed' | 'active';
   currentProcessingTraveler: number | null;
+  claimedByTraveler: number | null;
   queue: number[];
 }
 
@@ -60,7 +62,9 @@ export class DiscreteEventEngine {
       id,
       x,
       y,
+      state: 'available',
       currentProcessingTraveler: null,
+      claimedByTraveler: null,
       queue: []
     });
   }
@@ -155,7 +159,11 @@ export class DiscreteEventEngine {
     let minLoad = Infinity;
     
     for (const station of this.processingStations.values()) {
-      const load = (station.currentProcessingTraveler ? 1 : 0) + station.queue.length;
+      // Only consider truly available stations (not claimed or active)
+      if (station.state !== 'available') continue;
+      
+      // For available stations, load should always be 0 since no one is using them
+      const load = 0; // Available stations have no load
       if (load < minLoad) {
         minLoad = load;
         bestStation = station.id;
@@ -165,11 +173,29 @@ export class DiscreteEventEngine {
     return bestStation;
   }
 
+  private claimStation(stationId: string, travelerId: number): boolean {
+    const station = this.processingStations.get(stationId);
+    if (!station) return false;
+    
+    // Double-check that station is still available
+    if (station.state !== 'available') {
+      console.log(`Station ${stationId} is no longer available (state: ${station.state})`);
+      return false;
+    }
+    
+    // Claim the station atomically
+    station.state = 'claimed';
+    station.claimedByTraveler = travelerId;
+    console.log(`Traveler ${travelerId} successfully claimed station ${stationId}`);
+    return true;
+  }
+
   private calculateTravelTime(fromX: number, fromY: number, toX: number, toY: number): number {
     const distance = Math.sqrt((toX - fromX) ** 2 + (toY - fromY) ** 2);
     return Math.max((distance / this.baseTravelerSpeed) * 20, 100);
   }
 
+  // Core event processing
   private processEvent(event: SimulationEvent): void {
     const traveler = this.travelers.get(event.entityId);
     
@@ -250,7 +276,7 @@ export class DiscreteEventEngine {
         
         const targetStation = this.selectTargetStation();
         if (!targetStation) {
-          console.log(`Traveler ${event.entityId} no processing stations available - returning to A`);
+          console.log(`Traveler ${event.entityId} no available processing stations - returning to A`);
           traveler.stage = 'returningToA';
           traveler.currentLocation = 'TRAVELING_TO_A';
           traveler.currentSegmentStartTime = this.currentTime;
@@ -259,6 +285,18 @@ export class DiscreteEventEngine {
             this.locationA.x, this.locationA.y
           );
           this.scheduleEvent(travelTimeToANoStations, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          return;
+        }
+        
+        // Attempt to claim the selected station
+        const claimSuccessful = this.claimStation(targetStation, event.entityId);
+        if (!claimSuccessful) {
+          console.log(`Traveler ${event.entityId} failed to claim station ${targetStation} - trying again`);
+          // Put the box back and try again
+          this.availableBoxes++;
+          traveler.hasBox = false;
+          // Schedule another attempt to collect a box (which will trigger station selection again)
+          this.scheduleEvent(100, 'TRAVELER_COLLECT_BOX', event.entityId);
           return;
         }
         
@@ -276,7 +314,7 @@ export class DiscreteEventEngine {
           this.scheduleEvent(travelTimeToStation, 'TRAVELER_ARRIVE_AT_STATION', event.entityId, { stationId: targetStation });
         }
         
-        console.log(`Traveler ${event.entityId} collected box, heading to ${targetStation}`);
+        console.log(`Traveler ${event.entityId} collected box, heading to claimed ${targetStation}`);
         break;
 
       case 'TRAVELER_ARRIVE_AT_STATION':
@@ -286,21 +324,31 @@ export class DiscreteEventEngine {
         const arrivalStation = this.processingStations.get(stationId);
         if (!arrivalStation) return;
         
+        // Verify this traveler has claim on the station
+        if (arrivalStation.claimedByTraveler !== event.entityId) {
+          console.log(`Traveler ${event.entityId} arrived at ${stationId} but doesn't have claim - returning to A`);
+          traveler.stage = 'returningToA';
+          traveler.currentLocation = 'TRAVELING_TO_A';
+          traveler.currentSegmentStartTime = this.currentTime;
+          const travelTimeToA = this.calculateTravelTime(
+            arrivalStation.x, arrivalStation.y,
+            this.locationA.x, this.locationA.y
+          );
+          this.scheduleEvent(travelTimeToA, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          return;
+        }
+        
         traveler.x = arrivalStation.x;
         traveler.y = arrivalStation.y;
         traveler.currentLocation = stationId;
         traveler.currentSegmentStartTime = this.currentTime;
         
-        if (arrivalStation.currentProcessingTraveler === null) {
-          arrivalStation.currentProcessingTraveler = event.entityId;
-          traveler.stage = `processingAt${stationId}`;
-          this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING', event.entityId, { stationId });
-          console.log(`Traveler ${event.entityId} started processing at ${stationId}`);
-        } else {
-          traveler.stage = `waitingAt${stationId}`;
-          arrivalStation.queue.push(event.entityId);
-          console.log(`Traveler ${event.entityId} joining ${stationId} queue. Queue length: ${arrivalStation.queue.length}`);
-        }
+        // Start processing immediately since station is claimed by this traveler
+        arrivalStation.state = 'active';
+        arrivalStation.currentProcessingTraveler = event.entityId;
+        traveler.stage = `processingAt${stationId}`;
+        this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING', event.entityId, { stationId });
+        console.log(`Traveler ${event.entityId} started processing at ${stationId} (station now active)`);
         break;
 
       case 'TRAVELER_FINISH_PROCESSING':
@@ -313,22 +361,15 @@ export class DiscreteEventEngine {
         traveler.hasBox = false;
         traveler.boxesProcessed = (traveler.boxesProcessed || 0) + 1;
         this.totalBoxesProcessed++;
+        
+        // Release the station
+        processingStation.state = 'available';
         processingStation.currentProcessingTraveler = null;
+        processingStation.claimedByTraveler = null;
         
-        console.log(`Traveler ${event.entityId} finished processing at ${processingStationId} (total processed: ${this.totalBoxesProcessed}/${this.maxBoxes})`);
+        console.log(`Traveler ${event.entityId} finished processing at ${processingStationId} (station now available) (total processed: ${this.totalBoxesProcessed}/${this.maxBoxes})`);
         
-        // Process next in queue
-        if (processingStation.queue.length > 0) {
-          const nextTravelerId = processingStation.queue.shift()!;
-          const nextTraveler = this.travelers.get(nextTravelerId);
-          if (nextTraveler && nextTraveler.isActive) {
-            processingStation.currentProcessingTraveler = nextTravelerId;
-            nextTraveler.stage = `processingAt${processingStationId}`;
-            nextTraveler.currentSegmentStartTime = this.currentTime;
-            this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING', nextTravelerId, { stationId: processingStationId });
-            console.log(`Traveler ${nextTravelerId} started processing at ${processingStationId} from queue`);
-          }
-        }
+        // Note: No queue processing needed since stations must be claimed first
         
         // Check if all boxes have been processed
         if (this.totalBoxesProcessed >= this.maxBoxes) {
@@ -542,7 +583,9 @@ export class DiscreteEventEngine {
     
     // Reset all processing stations
     for (const station of this.processingStations.values()) {
+      station.state = 'available';
       station.currentProcessingTraveler = null;
+      station.claimedByTraveler = null;
       station.queue = [];
     }
     

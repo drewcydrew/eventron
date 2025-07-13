@@ -22,6 +22,7 @@ interface ProcessingStation {
   id: string;
   x: number;
   y: number;
+  state?: "available" | "claimed" | "active";
 }
 
 interface SimulationContextType {
