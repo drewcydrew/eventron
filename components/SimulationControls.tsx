@@ -5,13 +5,16 @@ import { useSimulation } from "../contexts/SimulationContext";
 export const SimulationControls: React.FC = () => {
   const {
     people,
+    processingStations,
     isSimulating,
     simulationComplete,
     boxStatus,
     startingTravelers,
     startingBoxes,
+    startingStations,
     setStartingTravelers,
     setStartingBoxes,
+    setStartingStations,
   } = useSimulation();
 
   // Force component updates during simulation for real-time status
@@ -25,26 +28,41 @@ export const SimulationControls: React.FC = () => {
   }, [isSimulating]);
 
   const getStatusText = () => {
-    if (people.length === 0) {
-      if (simulationComplete) {
-        return `Simulation Complete! All ${boxStatus.totalProcessed} boxes processed.`;
-      }
-      return "No travelers";
+    if (simulationComplete) {
+      return `🎉 Simulation Complete! All ${boxStatus.totalProcessed} boxes processed and all travelers returned to A.`;
     }
-    const movingToB1 = people.filter((p) => p.stage === "movingToB1").length;
-    const movingToB2 = people.filter((p) => p.stage === "movingToB2").length;
-    const processingB1 = people.filter(
-      (p) => p.stage === "processingAtB1"
-    ).length;
-    const processingB2 = people.filter(
-      (p) => p.stage === "processingAtB2"
-    ).length;
-    const waitingB1 = people.filter((p) => p.stage === "waitingAtB1").length;
-    const waitingB2 = people.filter((p) => p.stage === "waitingAtB2").length;
-    const returning = people.filter((p) => p.stage === "returningToA").length;
-    const idle = people.filter((p) => p.stage === "idle").length;
 
-    return `${people.length} travelers - Boxes at C: ${boxStatus.availableBoxes}, Processed: ${boxStatus.totalProcessed}/${startingBoxes} | Idle: ${idle}, To B1: ${movingToB1}, To B2: ${movingToB2}, B1 Queue: ${waitingB1}, B1 Proc: ${processingB1}, B2 Queue: ${waitingB2}, B2 Proc: ${processingB2}, Returning: ${returning}`;
+    if (people.length === 0 && !isSimulating) {
+      return "No travelers - ready to start simulation";
+    }
+
+    // Build dynamic status for all stations
+    const stationStats = processingStations
+      .map((station) => {
+        const movingTo = people.filter(
+          (p) => p.stage === `movingTo${station.id}`
+        ).length;
+        const processing = people.filter(
+          (p) => p.stage === `processingAt${station.id}`
+        ).length;
+        const waiting = people.filter(
+          (p) => p.stage === `waitingAt${station.id}`
+        ).length;
+        return `${station.id}: Moving:${movingTo} Queue:${waiting} Proc:${processing}`;
+      })
+      .join(", ");
+
+    const idle = people.filter((p) => p.stage === "idle").length;
+    const movingToC = people.filter((p) => p.stage === "movingToC").length;
+    const returningToC = people.filter(
+      (p) => p.stage === "returningToC"
+    ).length;
+    const collecting = people.filter((p) => p.stage === "collectingAtC").length;
+    const returningToA = people.filter(
+      (p) => p.stage === "returningToA"
+    ).length;
+
+    return `${people.length} travelers - Boxes at C: ${boxStatus.availableBoxes}, Processed: ${boxStatus.totalProcessed}/${startingBoxes} | Idle: ${idle}, To C: ${movingToC}, Ret to C: ${returningToC}, Collecting: ${collecting}, ${stationStats}, To A: ${returningToA}`;
   };
 
   return (
@@ -165,6 +183,53 @@ export const SimulationControls: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        <View style={styles.configRow}>
+          <Text style={styles.configLabel}>Processing Stations:</Text>
+          <View style={styles.numberControls}>
+            <TouchableOpacity
+              style={[
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
+              ]}
+              onPress={() =>
+                !isSimulating &&
+                setStartingStations(Math.max(1, startingStations - 1))
+              }
+              disabled={isSimulating}
+            >
+              <Text
+                style={[
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
+                ]}
+              >
+                -
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.numberDisplay}>{startingStations}</Text>
+            <TouchableOpacity
+              style={[
+                styles.numberButton,
+                isSimulating && styles.disabledButton,
+              ]}
+              onPress={() =>
+                !isSimulating &&
+                setStartingStations(Math.min(8, startingStations + 1))
+              }
+              disabled={isSimulating}
+            >
+              <Text
+                style={[
+                  styles.numberButtonText,
+                  isSimulating && styles.disabledText,
+                ]}
+              >
+                +
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       {/* Instructions */}
@@ -174,7 +239,7 @@ export const SimulationControls: React.FC = () => {
           • Configure initial settings above{"\n"}• Use controls at bottom to
           manage simulation{"\n"}• Switch to Simulation tab to view animation
           {"\n"}• Switch to Timeline tab to see activity charts{"\n"}• Drag
-          locations when simulation is stopped
+          locations and stations when simulation is stopped
         </Text>
       </View>
     </View>

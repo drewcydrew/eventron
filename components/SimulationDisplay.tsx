@@ -7,15 +7,13 @@ export const SimulationDisplay: React.FC = () => {
     people,
     locationA,
     locationC,
-    locationB1,
-    locationB2,
+    processingStations,
     isSimulating,
     simulationTime,
     boxStatus,
     updateLocationA,
     updateLocationC,
-    updateLocationB1,
-    updateLocationB2,
+    updateProcessingStationLocation,
   } = useSimulation();
 
   const panResponderA = PanResponder.create({
@@ -46,33 +44,25 @@ export const SimulationDisplay: React.FC = () => {
     onPanResponderRelease: () => {},
   });
 
-  const panResponderB1 = PanResponder.create({
-    onStartShouldSetPanResponder: () => !isSimulating,
-    onMoveShouldSetPanResponder: () => !isSimulating,
-    onPanResponderGrant: () => {},
-    onPanResponderMove: (evt, gestureState) => {
-      if (!isSimulating) {
-        const newX = locationB1.x + gestureState.dx;
-        const newY = locationB1.y + gestureState.dy;
-        updateLocationB1(newX, newY);
-      }
-    },
-    onPanResponderRelease: () => {},
-  });
-
-  const panResponderB2 = PanResponder.create({
-    onStartShouldSetPanResponder: () => !isSimulating,
-    onMoveShouldSetPanResponder: () => !isSimulating,
-    onPanResponderGrant: () => {},
-    onPanResponderMove: (evt, gestureState) => {
-      if (!isSimulating) {
-        const newX = locationB2.x + gestureState.dx;
-        const newY = locationB2.y + gestureState.dy;
-        updateLocationB2(newX, newY);
-      }
-    },
-    onPanResponderRelease: () => {},
-  });
+  // Create pan responders for processing stations
+  const createStationPanResponder = (stationId: string) => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => !isSimulating,
+      onMoveShouldSetPanResponder: () => !isSimulating,
+      onPanResponderGrant: () => {},
+      onPanResponderMove: (evt, gestureState) => {
+        if (!isSimulating) {
+          const station = processingStations.find((s) => s.id === stationId);
+          if (station) {
+            const newX = station.x + gestureState.dx;
+            const newY = station.y + gestureState.dy;
+            updateProcessingStationLocation(stationId, newX, newY);
+          }
+        }
+      },
+      onPanResponderRelease: () => {},
+    });
+  };
 
   const formatSimulationTime = (time: number) => {
     const seconds = Math.floor(time / 1000);
@@ -133,29 +123,21 @@ export const SimulationDisplay: React.FC = () => {
         <Text style={styles.boxCountText}>📦 {boxStatus.availableBoxes}</Text>
       </View>
 
-      {/* Location B1 marker */}
-      <View
-        style={[
-          styles.location,
-          { left: locationB1.x, top: locationB1.y },
-          !isSimulating && styles.draggable,
-        ]}
-        {...panResponderB1.panHandlers}
-      >
-        <Text style={styles.locationText}>B1</Text>
-      </View>
-
-      {/* Location B2 marker */}
-      <View
-        style={[
-          styles.location,
-          { left: locationB2.x, top: locationB2.y },
-          !isSimulating && styles.draggable,
-        ]}
-        {...panResponderB2.panHandlers}
-      >
-        <Text style={styles.locationText}>B2</Text>
-      </View>
+      {/* Dynamic Processing Stations */}
+      {processingStations.map((station) => (
+        <View
+          key={station.id}
+          style={[
+            styles.location,
+            { left: station.x, top: station.y },
+            !isSimulating && styles.draggable,
+            styles.processingStation,
+          ]}
+          {...createStationPanResponder(station.id).panHandlers}
+        >
+          <Text style={styles.locationText}>{station.id}</Text>
+        </View>
+      ))}
 
       {/* People with names - different colors for different stages */}
       {people.map((person) => (
@@ -166,12 +148,9 @@ export const SimulationDisplay: React.FC = () => {
               styles.person,
               { left: person.x, top: person.y },
               person.stage === "collectingAtC" && styles.collecting,
-              (person.stage === "processingAtB1" ||
-                person.stage === "processingAtB2") &&
-                styles.processing,
-              (person.stage === "waitingAtB1" ||
-                person.stage === "waitingAtB2") &&
-                styles.waiting,
+              person.stage.startsWith("processingAt") && styles.processing,
+              person.stage.startsWith("waitingAt") && styles.waiting,
+              person.stage === "completed" && styles.completed,
               person.hasBox && styles.hasBox,
             ]}
           />
@@ -187,6 +166,7 @@ export const SimulationDisplay: React.FC = () => {
           >
             T{person.id}
             {person.hasBox ? "📦" : ""}
+            {person.stage === "completed" ? "✅" : ""}
           </Text>
         </View>
       ))}
@@ -194,7 +174,8 @@ export const SimulationDisplay: React.FC = () => {
       {/* Debug info */}
       <View style={styles.debugInfo}>
         <Text style={styles.debugText}>
-          Time: {simulationTime.toFixed(0)}ms | People: {people.length}
+          Time: {simulationTime.toFixed(0)}ms | People: {people.length} |
+          Stations: {processingStations.length}
         </Text>
       </View>
     </View>
@@ -297,5 +278,13 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "white",
     textAlign: "center",
+  },
+  processingStation: {
+    backgroundColor: "#FF9500", // Orange for processing stations
+  },
+  completed: {
+    backgroundColor: "#34C759", // Green for completed
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
 });

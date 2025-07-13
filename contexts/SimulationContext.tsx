@@ -18,12 +18,17 @@ interface Location {
   y: number;
 }
 
+interface ProcessingStation {
+  id: string;
+  x: number;
+  y: number;
+}
+
 interface SimulationContextType {
   people: TravelerState[];
   locationA: Location;
   locationC: Location;
-  locationB1: Location;
-  locationB2: Location;
+  processingStations: ProcessingStation[];
   isSimulating: boolean;
   simulationComplete: boolean;
   speed: number;
@@ -31,6 +36,7 @@ interface SimulationContextType {
   boxStatus: { availableBoxes: number; totalProcessed: number };
   startingTravelers: number;
   startingBoxes: number;
+  startingStations: number;
   startSimulation: () => void;
   stopSimulation: () => void;
   resetSimulation: () => void;
@@ -38,10 +44,10 @@ interface SimulationContextType {
   setSpeed: (speed: number) => void;
   setStartingTravelers: (count: number) => void;
   setStartingBoxes: (count: number) => void;
+  setStartingStations: (count: number) => void;
   updateLocationA: (x: number, y: number) => void;
   updateLocationC: (x: number, y: number) => void;
-  updateLocationB1: (x: number, y: number) => void;
-  updateLocationB2: (x: number, y: number) => void;
+  updateProcessingStationLocation: (id: string, x: number, y: number) => void;
   ganttClearTrigger: number;
 }
 
@@ -77,16 +83,12 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
     x: 120,
     y: 180,
   });
-  const [locationB1, setLocationB1] = useState<Location>({
-    id: "B1",
-    x: 180,
-    y: 290,
-  });
-  const [locationB2, setLocationB2] = useState<Location>({
-    id: "B2",
-    x: 280,
-    y: 290,
-  });
+  const [processingStations, setProcessingStations] = useState<
+    ProcessingStation[]
+  >([
+    { id: "S1", x: 180, y: 290 },
+    { id: "S2", x: 280, y: 290 },
+  ]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationComplete, setSimulationComplete] = useState(false);
   const [speed, setSpeedState] = useState(1);
@@ -99,6 +101,7 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
   });
   const [startingTravelers, setStartingTravelersState] = useState(2);
   const [startingBoxes, setStartingBoxesState] = useState(5);
+  const [startingStations, setStartingStationsState] = useState(2);
 
   const engineRef = useRef<DiscreteEventEngine>(new DiscreteEventEngine());
   const nextIdRef = useRef(1);
@@ -121,20 +124,12 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
       console.log("Event: TRAVELER_COLLECT_BOX");
     });
 
-    engine.onEvent("TRAVELER_ARRIVE_AT_B1", () => {
-      console.log("Event: TRAVELER_ARRIVE_AT_B1");
+    engine.onEvent("TRAVELER_ARRIVE_AT_STATION", () => {
+      console.log("Event: TRAVELER_ARRIVE_AT_STATION");
     });
 
-    engine.onEvent("TRAVELER_ARRIVE_AT_B2", () => {
-      console.log("Event: TRAVELER_ARRIVE_AT_B2");
-    });
-
-    engine.onEvent("TRAVELER_FINISH_PROCESSING_B1", () => {
-      console.log("Event: TRAVELER_FINISH_PROCESSING_B1");
-    });
-
-    engine.onEvent("TRAVELER_FINISH_PROCESSING_B2", () => {
-      console.log("Event: TRAVELER_FINISH_PROCESSING_B2");
+    engine.onEvent("TRAVELER_FINISH_PROCESSING", () => {
+      console.log("Event: TRAVELER_FINISH_PROCESSING");
     });
 
     engine.onEvent("TRAVELER_ARRIVE_AT_A", () => {
@@ -142,9 +137,15 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
     });
 
     engine.onEvent("SIMULATION_COMPLETE", () => {
-      console.log("Event: SIMULATION_COMPLETE");
+      console.log("Event: SIMULATION_COMPLETE - stopping simulation");
       setIsSimulating(false);
       setSimulationComplete(true);
+
+      // Stop the update interval to freeze time display
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+        updateIntervalRef.current = null;
+      }
     });
 
     return () => {
@@ -193,15 +194,38 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
     }
   }, [people, timelineEvents]);
 
-  // Update locations in engine when they change
+  // Update processing stations in engine when they change
   useEffect(() => {
-    engineRef.current.updateLocations(
+    const engine = engineRef.current;
+    engine.clearProcessingStations();
+
+    processingStations.forEach((station) => {
+      engine.addProcessingStation(station.id, station.x + 15, station.y + 15);
+    });
+
+    engine.updateLocations(
       { x: locationA.x + 15, y: locationA.y + 15 },
-      { x: locationC.x + 15, y: locationC.y + 15 },
-      { x: locationB1.x + 15, y: locationB1.y + 15 },
-      { x: locationB2.x + 15, y: locationB2.y + 15 }
+      { x: locationC.x + 15, y: locationC.y + 15 }
     );
-  }, [locationA, locationC, locationB1, locationB2]);
+  }, [locationA, locationC, processingStations]);
+
+  // Generate processing stations based on count
+  const generateProcessingStations = (count: number): ProcessingStation[] => {
+    const stations: ProcessingStation[] = [];
+    const baseY = 290;
+    const startX = 180;
+    const spacing = 100;
+
+    for (let i = 0; i < count; i++) {
+      stations.push({
+        id: `S${i + 1}`,
+        x: startX + i * spacing,
+        y: baseY,
+      });
+    }
+
+    return stations;
+  };
 
   const startSimulation = () => {
     if (isSimulating) return;
@@ -239,6 +263,8 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
       clearInterval(updateIntervalRef.current);
       updateIntervalRef.current = null;
     }
+
+    console.log("Simulation stopped from context");
   };
 
   const resetSimulation = () => {
@@ -278,6 +304,13 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
     }
   };
 
+  const setStartingStations = (count: number) => {
+    if (!isSimulating) {
+      setStartingStationsState(count);
+      setProcessingStations(generateProcessingStations(count));
+    }
+  };
+
   const updateLocationA = (x: number, y: number) => {
     setLocationA((prev) => ({ ...prev, x, y }));
   };
@@ -286,12 +319,16 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
     setLocationC((prev) => ({ ...prev, x, y }));
   };
 
-  const updateLocationB1 = (x: number, y: number) => {
-    setLocationB1((prev) => ({ ...prev, x, y }));
-  };
-
-  const updateLocationB2 = (x: number, y: number) => {
-    setLocationB2((prev) => ({ ...prev, x, y }));
+  const updateProcessingStationLocation = (
+    id: string,
+    x: number,
+    y: number
+  ) => {
+    setProcessingStations((prev) =>
+      prev.map((station) =>
+        station.id === id ? { ...station, x, y } : station
+      )
+    );
   };
 
   return (
@@ -300,8 +337,7 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
         people,
         locationA,
         locationC,
-        locationB1,
-        locationB2,
+        processingStations,
         isSimulating,
         simulationComplete,
         speed,
@@ -309,6 +345,7 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
         boxStatus,
         startingTravelers,
         startingBoxes,
+        startingStations,
         startSimulation,
         stopSimulation,
         resetSimulation,
@@ -316,10 +353,10 @@ const SimulationProviderInner: React.FC<SimulationProviderProps> = ({
         setSpeed,
         setStartingTravelers,
         setStartingBoxes,
+        setStartingStations,
         updateLocationA,
         updateLocationC,
-        updateLocationB1,
-        updateLocationB2,
+        updateProcessingStationLocation,
         ganttClearTrigger,
       }}
     >

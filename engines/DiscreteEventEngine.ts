@@ -1,23 +1,31 @@
 export interface SimulationEvent {
   id: string;
   time: number;
-  type: 'TRAVELER_START_JOURNEY' | 'TRAVELER_ARRIVE_AT_C' | 'TRAVELER_COLLECT_BOX' | 'TRAVELER_ARRIVE_AT_B1' | 'TRAVELER_ARRIVE_AT_B2' | 'TRAVELER_FINISH_PROCESSING_B1' | 'TRAVELER_FINISH_PROCESSING_B2' | 'TRAVELER_ARRIVE_AT_A' | 'SIMULATION_COMPLETE';
+  type: 'TRAVELER_START_JOURNEY' | 'TRAVELER_ARRIVE_AT_C' | 'TRAVELER_COLLECT_BOX' | 'TRAVELER_ARRIVE_AT_STATION' | 'TRAVELER_FINISH_PROCESSING' | 'TRAVELER_ARRIVE_AT_A' | 'SIMULATION_COMPLETE';
   entityId: number;
   data?: any;
 }
 
 export interface TravelerState {
   id: number;
-  currentLocation: 'A' | 'C' | 'B1' | 'B2' | 'TRAVELING_TO_C' | 'TRAVELING_TO_B1' | 'TRAVELING_TO_B2' | 'TRAVELING_TO_A';
-  stage: "idle" | "movingToC" | "collectingAtC" | "movingToB1" | "movingToB2" | "processingAtB1" | "processingAtB2" | "waitingAtB1" | "waitingAtB2" | "returningToA";
+  currentLocation: string; // Now supports dynamic station IDs
+  stage: string; // Dynamic stage names
   journeyStartTime: number;
   currentSegmentStartTime: number;
   x: number;
   y: number;
   isActive: boolean;
-  targetStation?: 'B1' | 'B2';
+  targetStation?: string; // Dynamic station ID
   hasBox?: boolean;
   boxesProcessed?: number;
+}
+
+export interface ProcessingStation {
+  id: string;
+  x: number;
+  y: number;
+  currentProcessingTraveler: number | null;
+  queue: number[];
 }
 
 export class DiscreteEventEngine {
@@ -31,27 +39,51 @@ export class DiscreteEventEngine {
   
   // Simulation parameters
   private locationA = { x: 55, y: 105 };
-  private locationC = { x: 100, y: 200 }; // New collection point
-  private locationB1 = { x: 200, y: 305 };
-  private locationB2 = { x: 300, y: 305 };
-  private simulationSpeed = 1; // Simulation time multiplier
-  private baseTravelerSpeed = 2; // Base traveler movement speed (unchanged by simulation speed)
+  private locationC = { x: 100, y: 200 };
+  private processingStations: Map<string, ProcessingStation> = new Map();
+  private simulationSpeed = 1;
+  private baseTravelerSpeed = 2;
   private processingDuration = 2000;
-  private collectionDuration = 1000; // Time to collect box at C
-
-  // Queueing logic for both stations
-  private processingQueueB1: number[] = [];
-  private processingQueueB2: number[] = [];
-  private currentProcessingTravelerB1: number | null = null;
-  private currentProcessingTravelerB2: number | null = null;
+  private collectionDuration = 1000;
 
   // Box management
-  private availableBoxes: number = 5; // Start with 5 boxes at C
+  private availableBoxes: number = 5;
   private totalBoxesProcessed: number = 0;
-  private maxBoxes: number = 5; // Configurable max boxes
-  private hasBeenInitialized: boolean = false; // Track if simulation has been initialized
+  private maxBoxes: number = 5;
+  private hasBeenInitialized: boolean = false;
 
   constructor() {}
+
+  // Processing station management
+  addProcessingStation(id: string, x: number, y: number): void {
+    this.processingStations.set(id, {
+      id,
+      x,
+      y,
+      currentProcessingTraveler: null,
+      queue: []
+    });
+  }
+
+  removeProcessingStation(id: string): void {
+    this.processingStations.delete(id);
+  }
+
+  updateProcessingStationLocation(id: string, x: number, y: number): void {
+    const station = this.processingStations.get(id);
+    if (station) {
+      station.x = x;
+      station.y = y;
+    }
+  }
+
+  getProcessingStations(): ProcessingStation[] {
+    return Array.from(this.processingStations.values());
+  }
+
+  clearProcessingStations(): void {
+    this.processingStations.clear();
+  }
 
   // Core event queue management
   scheduleEvent(delay: number, type: SimulationEvent['type'], entityId: number, data?: any): string {
@@ -116,24 +148,26 @@ export class DiscreteEventEngine {
     }
   }
 
+  private selectTargetStation(): string | null {
+    if (this.processingStations.size === 0) return null;
+    
+    let bestStation = null;
+    let minLoad = Infinity;
+    
+    for (const station of this.processingStations.values()) {
+      const load = (station.currentProcessingTraveler ? 1 : 0) + station.queue.length;
+      if (load < minLoad) {
+        minLoad = load;
+        bestStation = station.id;
+      }
+    }
+    
+    return bestStation;
+  }
+
   private calculateTravelTime(fromX: number, fromY: number, toX: number, toY: number): number {
     const distance = Math.sqrt((toX - fromX) ** 2 + (toY - fromY) ** 2);
     return Math.max((distance / this.baseTravelerSpeed) * 20, 100);
-  }
-
-  private selectTargetStation(): 'B1' | 'B2' {
-    // Choose the station with fewer people (processing + waiting)
-    const b1Load = (this.currentProcessingTravelerB1 ? 1 : 0) + this.processingQueueB1.length;
-    const b2Load = (this.currentProcessingTravelerB2 ? 1 : 0) + this.processingQueueB2.length;
-    
-    console.log(`Station loads - B1: ${b1Load}, B2: ${b2Load}`);
-    
-    // If loads are equal, alternate between stations
-    if (b1Load === b2Load) {
-      return Math.random() < 0.5 ? 'B1' : 'B2';
-    }
-    
-    return b1Load < b2Load ? 'B1' : 'B2';
   }
 
   private processEvent(event: SimulationEvent): void {
@@ -143,7 +177,6 @@ export class DiscreteEventEngine {
       case 'TRAVELER_START_JOURNEY':
         if (!traveler || !traveler.isActive) return;
         
-        // Check if there are boxes available before starting journey
         if (this.availableBoxes <= 0) {
           console.log(`Traveler ${event.entityId} cannot start - no boxes available`);
           traveler.stage = 'returningToA';
@@ -158,17 +191,15 @@ export class DiscreteEventEngine {
           return;
         }
         
-        // Go to C to collect a box
         traveler.stage = 'movingToC';
         traveler.currentLocation = 'TRAVELING_TO_C';
         traveler.currentSegmentStartTime = this.currentTime;
         
-        // Calculate travel time from current position to C
-        const travelTimeToC = this.calculateTravelTime(
+        const initialTravelTimeToC = this.calculateTravelTime(
           traveler.x, traveler.y,
           this.locationC.x, this.locationC.y
         );
-        this.scheduleEvent(travelTimeToC, 'TRAVELER_ARRIVE_AT_C', event.entityId);
+        this.scheduleEvent(initialTravelTimeToC, 'TRAVELER_ARRIVE_AT_C', event.entityId);
         console.log(`Traveler ${event.entityId} heading to C (boxes available: ${this.availableBoxes})`);
         break;
 
@@ -178,24 +209,21 @@ export class DiscreteEventEngine {
         traveler.x = this.locationC.x;
         traveler.y = this.locationC.y;
         traveler.currentLocation = 'C';
-        traveler.stage = 'collectingAtC';
         traveler.currentSegmentStartTime = this.currentTime;
         
-        // Check if boxes are still available
         if (this.availableBoxes <= 0) {
-          console.log(`Traveler ${event.entityId} arrived at C but no boxes left - going to A`);
-          // Go directly to A
+          console.log(`Traveler ${event.entityId} arrived at C but no boxes left - returning to A`);
           traveler.stage = 'returningToA';
           traveler.currentLocation = 'TRAVELING_TO_A';
-          const travelTimeToA = this.calculateTravelTime(
+          traveler.currentSegmentStartTime = this.currentTime;
+          const travelTimeToAFromC = this.calculateTravelTime(
             this.locationC.x, this.locationC.y,
             this.locationA.x, this.locationA.y
           );
-          this.scheduleEvent(travelTimeToA, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          this.scheduleEvent(travelTimeToAFromC, 'TRAVELER_ARRIVE_AT_A', event.entityId);
           return;
         }
         
-        // Start collecting if boxes are available
         traveler.stage = 'collectingAtC';
         this.scheduleEvent(this.collectionDuration, 'TRAVELER_COLLECT_BOX', event.entityId);
         console.log(`Traveler ${event.entityId} collecting box at C`);
@@ -204,229 +232,146 @@ export class DiscreteEventEngine {
       case 'TRAVELER_COLLECT_BOX':
         if (!traveler || !traveler.isActive) return;
         
-        // Check if boxes are still available when collection completes
         if (this.availableBoxes <= 0) {
-          console.log(`Traveler ${event.entityId} tried to collect but no boxes left`);
+          console.log(`Traveler ${event.entityId} tried to collect but no boxes left - returning to A`);
           traveler.stage = 'returningToA';
           traveler.currentLocation = 'TRAVELING_TO_A';
-          const travelTimeToA = this.calculateTravelTime(
+          traveler.currentSegmentStartTime = this.currentTime;
+          const travelTimeToAAfterCollect = this.calculateTravelTime(
             this.locationC.x, this.locationC.y,
             this.locationA.x, this.locationA.y
           );
-          this.scheduleEvent(travelTimeToA, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          this.scheduleEvent(travelTimeToAAfterCollect, 'TRAVELER_ARRIVE_AT_A', event.entityId);
           return;
         }
         
-        // Successfully collect a box
         this.availableBoxes--;
         traveler.hasBox = true;
         
-        // Select target station for processing
         const targetStation = this.selectTargetStation();
+        if (!targetStation) {
+          console.log(`Traveler ${event.entityId} no processing stations available - returning to A`);
+          traveler.stage = 'returningToA';
+          traveler.currentLocation = 'TRAVELING_TO_A';
+          traveler.currentSegmentStartTime = this.currentTime;
+          const travelTimeToANoStations = this.calculateTravelTime(
+            this.locationC.x, this.locationC.y,
+            this.locationA.x, this.locationA.y
+          );
+          this.scheduleEvent(travelTimeToANoStations, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          return;
+        }
+        
         traveler.targetStation = targetStation;
         traveler.currentSegmentStartTime = this.currentTime;
+        traveler.stage = `movingTo${targetStation}`;
+        traveler.currentLocation = `TRAVELING_TO_${targetStation}`;
         
-        console.log(`Traveler ${event.entityId} collected box (${this.availableBoxes} remaining), heading to ${targetStation}`);
-        
-        if (targetStation === 'B1') {
-          traveler.stage = 'movingToB1';
-          traveler.currentLocation = 'TRAVELING_TO_B1';
-          const travelTime = this.calculateTravelTime(
+        const station = this.processingStations.get(targetStation);
+        if (station) {
+          const travelTimeToStation = this.calculateTravelTime(
             this.locationC.x, this.locationC.y,
-            this.locationB1.x, this.locationB1.y
+            station.x, station.y
           );
-          this.scheduleEvent(travelTime, 'TRAVELER_ARRIVE_AT_B1', event.entityId);
-        } else {
-          traveler.stage = 'movingToB2';
-          traveler.currentLocation = 'TRAVELING_TO_B2';
-          const travelTime = this.calculateTravelTime(
-            this.locationC.x, this.locationC.y,
-            this.locationB2.x, this.locationB2.y
-          );
-          this.scheduleEvent(travelTime, 'TRAVELER_ARRIVE_AT_B2', event.entityId);
+          this.scheduleEvent(travelTimeToStation, 'TRAVELER_ARRIVE_AT_STATION', event.entityId, { stationId: targetStation });
         }
+        
+        console.log(`Traveler ${event.entityId} collected box, heading to ${targetStation}`);
         break;
 
-      case 'TRAVELER_ARRIVE_AT_B1':
+      case 'TRAVELER_ARRIVE_AT_STATION':
         if (!traveler || !traveler.isActive) return;
         
-        traveler.x = this.locationB1.x;
-        traveler.y = this.locationB1.y;
-        traveler.currentLocation = 'B1';
+        const stationId = event.data?.stationId || traveler.targetStation;
+        const arrivalStation = this.processingStations.get(stationId);
+        if (!arrivalStation) return;
+        
+        traveler.x = arrivalStation.x;
+        traveler.y = arrivalStation.y;
+        traveler.currentLocation = stationId;
         traveler.currentSegmentStartTime = this.currentTime;
         
-        // Only allow switching if this traveler came directly from C
-        const canSwitchFromB1 = traveler.stage === 'movingToB1';
-        
-        if (canSwitchFromB1) {
-          const b1LoadWithMe = (this.currentProcessingTravelerB1 ? 1 : 0) + this.processingQueueB1.length + 1;
-          const b2LoadCurrent = (this.currentProcessingTravelerB2 ? 1 : 0) + this.processingQueueB2.length;
-          
-          console.log(`Traveler ${event.entityId} at B1 - B1 load (with me): ${b1LoadWithMe}, B2 load: ${b2LoadCurrent}`);
-          
-          // Only switch if B2 is significantly better (at least 2 people difference)
-          if (b2LoadCurrent + 2 <= b1LoadWithMe) {
-            console.log(`Traveler ${event.entityId} switching from B1 to B2`);
-            traveler.targetStation = 'B2';
-            traveler.stage = 'movingToB2';
-            traveler.currentLocation = 'TRAVELING_TO_B2';
-            
-            const travelTime = this.calculateTravelTime(
-              this.locationB1.x, this.locationB1.y,
-              this.locationB2.x, this.locationB2.y
-            );
-            this.scheduleEvent(travelTime, 'TRAVELER_ARRIVE_AT_B2', event.entityId);
-            break;
-          }
-        }
-        
-        // Stay at B1
-        if (this.currentProcessingTravelerB1 === null) {
-          this.currentProcessingTravelerB1 = event.entityId;
-          traveler.stage = 'processingAtB1';
-          this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING_B1', event.entityId);
-          console.log(`Traveler ${event.entityId} started processing at B1`);
+        if (arrivalStation.currentProcessingTraveler === null) {
+          arrivalStation.currentProcessingTraveler = event.entityId;
+          traveler.stage = `processingAt${stationId}`;
+          this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING', event.entityId, { stationId });
+          console.log(`Traveler ${event.entityId} started processing at ${stationId}`);
         } else {
-          traveler.stage = 'waitingAtB1';
-          this.processingQueueB1.push(event.entityId);
-          console.log(`Traveler ${event.entityId} joining B1 queue. Queue length: ${this.processingQueueB1.length}`);
+          traveler.stage = `waitingAt${stationId}`;
+          arrivalStation.queue.push(event.entityId);
+          console.log(`Traveler ${event.entityId} joining ${stationId} queue. Queue length: ${arrivalStation.queue.length}`);
         }
         break;
 
-      case 'TRAVELER_ARRIVE_AT_B2':
+      case 'TRAVELER_FINISH_PROCESSING':
         if (!traveler || !traveler.isActive) return;
         
-        traveler.x = this.locationB2.x;
-        traveler.y = this.locationB2.y;
-        traveler.currentLocation = 'B2';
-        traveler.currentSegmentStartTime = this.currentTime;
+        const processingStationId = event.data?.stationId || traveler.targetStation;
+        const processingStation = this.processingStations.get(processingStationId);
+        if (!processingStation) return;
         
-        // Only allow switching if this traveler came directly from C
-        const canSwitchFromB2 = traveler.stage === 'movingToB2';
-        
-        if (canSwitchFromB2) {
-          const b1LoadCurrent = (this.currentProcessingTravelerB1 ? 1 : 0) + this.processingQueueB1.length;
-          const b2LoadWithMe = (this.currentProcessingTravelerB2 ? 1 : 0) + this.processingQueueB2.length + 1;
-          
-          console.log(`Traveler ${event.entityId} at B2 - B1 load: ${b1LoadCurrent}, B2 load (with me): ${b2LoadWithMe}`);
-          
-          // Only switch if B1 is significantly better (at least 2 people difference)
-          if (b1LoadCurrent + 2 <= b2LoadWithMe) {
-            console.log(`Traveler ${event.entityId} switching from B2 to B1`);
-            traveler.targetStation = 'B1';
-            traveler.stage = 'movingToB1';
-            traveler.currentLocation = 'TRAVELING_TO_B1';
-            
-            const travelTime = this.calculateTravelTime(
-              this.locationB2.x, this.locationB2.y,
-              this.locationB1.x, this.locationB1.y
-            );
-            this.scheduleEvent(travelTime, 'TRAVELER_ARRIVE_AT_B1', event.entityId);
-            break;
-          }
-        }
-        
-        // Stay at B2
-        if (this.currentProcessingTravelerB2 === null) {
-          this.currentProcessingTravelerB2 = event.entityId;
-          traveler.stage = 'processingAtB2';
-          this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING_B2', event.entityId);
-          console.log(`Traveler ${event.entityId} started processing at B2`);
-        } else {
-          traveler.stage = 'waitingAtB2';
-          this.processingQueueB2.push(event.entityId);
-          console.log(`Traveler ${event.entityId} joining B2 queue. Queue length: ${this.processingQueueB2.length}`);
-        }
-        break;
-
-      case 'TRAVELER_FINISH_PROCESSING_B1':
-        if (!traveler || !traveler.isActive) return;
-        
-        traveler.hasBox = false; // Processed the box
+        traveler.hasBox = false;
         traveler.boxesProcessed = (traveler.boxesProcessed || 0) + 1;
         this.totalBoxesProcessed++;
-        this.currentProcessingTravelerB1 = null;
+        processingStation.currentProcessingTraveler = null;
         
-        console.log(`Traveler ${event.entityId} finished processing at B1 (total processed: ${this.totalBoxesProcessed}/5)`);
+        console.log(`Traveler ${event.entityId} finished processing at ${processingStationId} (total processed: ${this.totalBoxesProcessed}/${this.maxBoxes})`);
         
         // Process next in queue
-        if (this.processingQueueB1.length > 0) {
-          const nextTravelerId = this.processingQueueB1.shift()!;
+        if (processingStation.queue.length > 0) {
+          const nextTravelerId = processingStation.queue.shift()!;
           const nextTraveler = this.travelers.get(nextTravelerId);
           if (nextTraveler && nextTraveler.isActive) {
-            this.currentProcessingTravelerB1 = nextTravelerId;
-            nextTraveler.stage = 'processingAtB1';
+            processingStation.currentProcessingTraveler = nextTravelerId;
+            nextTraveler.stage = `processingAt${processingStationId}`;
             nextTraveler.currentSegmentStartTime = this.currentTime;
-            this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING_B1', nextTravelerId);
-            console.log(`Traveler ${nextTravelerId} started processing at B1 from queue`);
+            this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING', nextTravelerId, { stationId: processingStationId });
+            console.log(`Traveler ${nextTravelerId} started processing at ${processingStationId} from queue`);
           }
         }
         
-        // Check if more boxes are available
-        if (this.availableBoxes > 0) {
-          console.log(`Traveler ${event.entityId} going back to C for another box`);
-          this.scheduleEvent(100, 'TRAVELER_START_JOURNEY', event.entityId);
+        // Check if all boxes have been processed
+        if (this.totalBoxesProcessed >= this.maxBoxes) {
+          // All boxes processed - return directly to A
+          console.log(`Traveler ${event.entityId} - all boxes processed, returning directly to A`);
+          traveler.stage = 'returningToA';
+          traveler.currentLocation = 'TRAVELING_TO_A';
+          traveler.currentSegmentStartTime = this.currentTime;
+          
+          const directTravelTimeToA = this.calculateTravelTime(
+            processingStation.x, processingStation.y,
+            this.locationA.x, this.locationA.y
+          );
+          this.scheduleEvent(directTravelTimeToA, 'TRAVELER_ARRIVE_AT_A', event.entityId);
         } else {
-          console.log(`Traveler ${event.entityId} returning to C then A - no more boxes`);
-          traveler.stage = 'movingToC';
+          // More boxes available - return to C first
+          console.log(`Traveler ${event.entityId} returning to C after processing`);
+          traveler.stage = 'returningToC';
           traveler.currentLocation = 'TRAVELING_TO_C';
           traveler.currentSegmentStartTime = this.currentTime;
           
-          const travelTimeToC = this.calculateTravelTime(
-            this.locationB1.x, this.locationB1.y,
+          const returnTravelTimeToC = this.calculateTravelTime(
+            processingStation.x, processingStation.y,
             this.locationC.x, this.locationC.y
           );
-          this.scheduleEvent(travelTimeToC, 'TRAVELER_ARRIVE_AT_C', event.entityId);
-        }
-        break;
-
-      case 'TRAVELER_FINISH_PROCESSING_B2':
-        if (!traveler || !traveler.isActive) return;
-        
-        traveler.hasBox = false; // Processed the box
-        traveler.boxesProcessed = (traveler.boxesProcessed || 0) + 1;
-        this.totalBoxesProcessed++;
-        this.currentProcessingTravelerB2 = null;
-        
-        console.log(`Traveler ${event.entityId} finished processing at B2 (total processed: ${this.totalBoxesProcessed}/5)`);
-        
-        // Process next in queue
-        if (this.processingQueueB2.length > 0) {
-          const nextTravelerId = this.processingQueueB2.shift()!;
-          const nextTraveler = this.travelers.get(nextTravelerId);
-          if (nextTraveler && nextTraveler.isActive) {
-            this.currentProcessingTravelerB2 = nextTravelerId;
-            nextTraveler.stage = 'processingAtB2';
-            nextTraveler.currentSegmentStartTime = this.currentTime;
-            this.scheduleEvent(this.processingDuration, 'TRAVELER_FINISH_PROCESSING_B2', nextTravelerId);
-            console.log(`Traveler ${nextTravelerId} started processing at B2 from queue`);
-          }
-        }
-        
-        // Check if more boxes are available
-        if (this.availableBoxes > 0) {
-          console.log(`Traveler ${event.entityId} going back to C for another box`);
-          this.scheduleEvent(100, 'TRAVELER_START_JOURNEY', event.entityId);
-        } else {
-          console.log(`Traveler ${event.entityId} returning to C then A - no more boxes`);
-          traveler.stage = 'movingToC';
-          traveler.currentLocation = 'TRAVELING_TO_C';
-          traveler.currentSegmentStartTime = this.currentTime;
           
-          const travelTimeToC = this.calculateTravelTime(
-            this.locationB2.x, this.locationB2.y,
-            this.locationC.x, this.locationC.y
-          );
-          this.scheduleEvent(travelTimeToC, 'TRAVELER_ARRIVE_AT_C', event.entityId);
+          this.scheduleEvent(returnTravelTimeToC, 'TRAVELER_ARRIVE_AT_C', event.entityId, { postProcessing: true });
         }
         break;
 
       case 'TRAVELER_ARRIVE_AT_A':
         if (!traveler || !traveler.isActive) return;
         
+        traveler.x = this.locationA.x;
+        traveler.y = this.locationA.y;
+        traveler.currentLocation = 'A';
+        traveler.stage = 'completed';
+        
+        console.log(`Traveler ${event.entityId} completed journey and arrived at A (processed ${traveler.boxesProcessed || 0} boxes)`);
+        
+        // Remove traveler immediately and check for simulation completion
         traveler.isActive = false;
         this.travelers.delete(event.entityId);
-        console.log(`Traveler ${event.entityId} completed journey (processed ${traveler.boxesProcessed || 0} boxes)`);
         
         // Check if simulation should complete
         this.checkSimulationComplete();
@@ -435,6 +380,43 @@ export class DiscreteEventEngine {
       case 'SIMULATION_COMPLETE':
         console.log('Simulation automatically stopping - all work complete!');
         this.stop();
+        break;
+
+      // Handle special case for post-processing arrival at C
+      case 'TRAVELER_ARRIVE_AT_C':
+        if (event.data?.postProcessing) {
+          if (!traveler || !traveler.isActive) return;
+          
+          traveler.x = this.locationC.x;
+          traveler.y = this.locationC.y;
+          traveler.currentLocation = 'C';
+          traveler.currentSegmentStartTime = this.currentTime;
+          
+          // Check if more boxes are available for another round
+          if (this.availableBoxes > 0 && this.totalBoxesProcessed < this.maxBoxes) {
+            console.log(`Traveler ${event.entityId} at C - more boxes available, collecting another`);
+            traveler.stage = 'collectingAtC';
+            this.scheduleEvent(this.collectionDuration, 'TRAVELER_COLLECT_BOX', event.entityId);
+          } else {
+            console.log(`Traveler ${event.entityId} at C - no more boxes or all processed, returning to A to complete journey`);
+            traveler.stage = 'returningToA';
+            traveler.currentLocation = 'TRAVELING_TO_A';
+            traveler.currentSegmentStartTime = this.currentTime;
+            
+            const finalTravelTimeToA = this.calculateTravelTime(
+              this.locationC.x, this.locationC.y,
+              this.locationA.x, this.locationA.y
+            );
+            this.scheduleEvent(finalTravelTimeToA, 'TRAVELER_ARRIVE_AT_A', event.entityId);
+          }
+          
+          // Notify observers for this special case
+          const handler = this.eventHandlers.get(event.type);
+          if (handler) {
+            handler(event);
+          }
+          return;
+        }
         break;
     }
 
@@ -457,79 +439,52 @@ export class DiscreteEventEngine {
       // Calculate interpolated position for traveling travelers
       if (traveler.currentLocation === 'TRAVELING_TO_C') {
         const elapsed = this.currentTime - traveler.currentSegmentStartTime;
-        let startX, startY, totalTime;
+        let startX, startY;
         
-        // Determine where they're coming from
-        if (traveler.targetStation === 'B1') {
-          startX = this.locationB1.x;
-          startY = this.locationB1.y;
-        } else if (traveler.targetStation === 'B2') {
-          startX = this.locationB2.x;
-          startY = this.locationB2.y;
+        // Determine starting position based on stage
+        if (traveler.stage === 'returningToC') {
+          // Coming from a processing station
+          if (traveler.targetStation) {
+            const station = this.processingStations.get(traveler.targetStation);
+            if (station) {
+              startX = station.x;
+              startY = station.y;
+            } else {
+              startX = this.locationA.x;
+              startY = this.locationA.y;
+            }
+          } else {
+            startX = this.locationA.x;
+            startY = this.locationA.y;
+          }
         } else {
-          // Coming from A initially
+          // Initial journey from A
           startX = this.locationA.x;
           startY = this.locationA.y;
         }
         
-        totalTime = this.calculateTravelTime(startX, startY, this.locationC.x, this.locationC.y);
+        const totalTime = this.calculateTravelTime(startX, startY, this.locationC.x, this.locationC.y);
         const progress = Math.min(elapsed / totalTime, 1);
         
         currentState.x = startX + (this.locationC.x - startX) * progress;
         currentState.y = startY + (this.locationC.y - startY) * progress;
-      } else if (traveler.currentLocation === 'TRAVELING_TO_B1') {
-        const elapsed = this.currentTime - traveler.currentSegmentStartTime;
-        let startX, startY, totalTime;
+      } else if (traveler.currentLocation.startsWith('TRAVELING_TO_') && traveler.targetStation) {
+        const targetStationId = traveler.targetStation;
+        const targetStation = this.processingStations.get(targetStationId);
         
-        // Determine starting position based on where they're coming from
-        if (traveler.stage === 'movingToB1' && !traveler.hasBox) {
-          // This shouldn't happen in our flow, but handle it
-          startX = this.locationA.x;
-          startY = this.locationA.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB1.x, this.locationB1.y);
-        } else if (traveler.x === this.locationC.x && traveler.y === this.locationC.y) {
-          // Coming from C
-          startX = this.locationC.x;
-          startY = this.locationC.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB1.x, this.locationB1.y);
-        } else {
-          // Coming from B2 (switching)
-          startX = this.locationB2.x;
-          startY = this.locationB2.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB1.x, this.locationB1.y);
+        if (targetStation) {
+          const elapsed = this.currentTime - traveler.currentSegmentStartTime;
+          const startX = this.locationC.x;
+          const startY = this.locationC.y;
+          
+          const totalTime = this.calculateTravelTime(startX, startY, targetStation.x, targetStation.y);
+          const progress = Math.min(elapsed / totalTime, 1);
+          
+          currentState.x = startX + (targetStation.x - startX) * progress;
+          currentState.y = startY + (targetStation.y - startY) * progress;
         }
-        
-        const progress = Math.min(elapsed / totalTime, 1);
-        currentState.x = startX + (this.locationB1.x - startX) * progress;
-        currentState.y = startY + (this.locationB1.y - startY) * progress;
-      } else if (traveler.currentLocation === 'TRAVELING_TO_B2') {
-        const elapsed = this.currentTime - traveler.currentSegmentStartTime;
-        let startX, startY, totalTime;
-        
-        // Determine starting position based on where they're coming from
-        if (traveler.stage === 'movingToB2' && !traveler.hasBox) {
-          // This shouldn't happen in our flow, but handle it
-          startX = this.locationA.x;
-          startY = this.locationA.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB2.x, this.locationB2.y);
-        } else if (traveler.x === this.locationC.x && traveler.y === this.locationC.y) {
-          // Coming from C
-          startX = this.locationC.x;
-          startY = this.locationC.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB2.x, this.locationB2.y);
-        } else {
-          // Coming from B1 (switching)
-          startX = this.locationB1.x;
-          startY = this.locationB1.y;
-          totalTime = this.calculateTravelTime(startX, startY, this.locationB2.x, this.locationB2.y);
-        }
-        
-        const progress = Math.min(elapsed / totalTime, 1);
-        currentState.x = startX + (this.locationB2.x - startX) * progress;
-        currentState.y = startY + (this.locationB2.y - startY) * progress;
       } else if (traveler.currentLocation === 'TRAVELING_TO_A') {
         const elapsed = this.currentTime - traveler.currentSegmentStartTime;
-        // Now always coming from C when going to A
         const totalTime = this.calculateTravelTime(this.locationC.x, this.locationC.y, this.locationA.x, this.locationA.y);
         const progress = Math.min(elapsed / totalTime, 1);
         
@@ -565,8 +520,10 @@ export class DiscreteEventEngine {
       this.processEvent(event);
     }
     
-    // Advance simulation time based on simulation speed
-    this.currentTime += 50 * this.simulationSpeed; // simulationSpeed affects time advancement
+    // Only advance time if simulation is still running
+    if (this.isRunning) {
+      this.currentTime += 50 * this.simulationSpeed;
+    }
   }
 
   stop(): void {
@@ -575,21 +532,25 @@ export class DiscreteEventEngine {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    console.log('Simulation stopped');
   }
 
   reset(): void {
     this.stop();
     this.eventQueue = [];
     this.travelers.clear();
-    this.processingQueueB1 = [];
-    this.processingQueueB2 = [];
-    this.currentProcessingTravelerB1 = null;
-    this.currentProcessingTravelerB2 = null;
-    this.availableBoxes = this.maxBoxes; // Reset to configured max
+    
+    // Reset all processing stations
+    for (const station of this.processingStations.values()) {
+      station.currentProcessingTraveler = null;
+      station.queue = [];
+    }
+    
+    this.availableBoxes = this.maxBoxes;
     this.totalBoxesProcessed = 0;
     this.currentTime = 0;
     this.nextEventId = 1;
-    this.hasBeenInitialized = false; // Allow re-initialization
+    this.hasBeenInitialized = false;
   }
 
   getHasBeenInitialized(): boolean {
@@ -614,26 +575,18 @@ export class DiscreteEventEngine {
     return this.simulationSpeed;
   }
 
-  updateLocations(locA: {x: number, y: number}, locC: {x: number, y: number}, locB1: {x: number, y: number}, locB2: {x: number, y: number}): void {
+  updateLocations(locA: {x: number, y: number}, locC: {x: number, y: number}): void {
     this.locationA = locA;
     this.locationC = locC;
-    this.locationB1 = locB1;
-    this.locationB2 = locB2;
   }
 
-  // Add getter for queue status
-  getQueueStatus(): { 
-    b1QueueLength: number; 
-    b2QueueLength: number; 
-    processingTravelerB1: number | null;
-    processingTravelerB2: number | null;
-  } {
-    return {
-      b1QueueLength: this.processingQueueB1.length,
-      b2QueueLength: this.processingQueueB2.length,
-      processingTravelerB1: this.currentProcessingTravelerB1,
-      processingTravelerB2: this.currentProcessingTravelerB2
-    };
+  getQueueStatus(): any {
+    const status: any = {};
+    for (const station of this.processingStations.values()) {
+      status[`${station.id}QueueLength`] = station.queue.length;
+      status[`processingTraveler${station.id}`] = station.currentProcessingTraveler;
+    }
+    return status;
   }
 
   // Add getter for box status

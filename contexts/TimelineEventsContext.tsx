@@ -73,11 +73,9 @@ export const TimelineEventsProvider: React.FC<TimelineEventsProviderProps> = ({
     const { travelerId, timestamp, stage } = event;
     const previousStage = travelerStages.get(travelerId) || "none";
 
-    // Update traveler stages
     setTravelerStages((prev) => new Map(prev.set(travelerId, stage)));
 
     if (previousStage !== stage) {
-      // End previous activity if it exists and isn't idle
       if (previousStage !== "none" && previousStage !== "idle") {
         setActivities((prev) =>
           prev.map((activity) =>
@@ -88,20 +86,27 @@ export const TimelineEventsProvider: React.FC<TimelineEventsProviderProps> = ({
         );
       }
 
-      // Start new activity based on current stage
       let newActivity: Activity | null = null;
 
       switch (stage) {
         case "movingToC":
-          const isReturning =
-            previousStage === "processingAtB1" ||
-            previousStage === "processingAtB2";
+          const isReturning = previousStage.startsWith("processingAt");
           newActivity = {
             id: `${travelerId}-moveToC-${timestamp}`,
             travelerId,
             name: isReturning ? "Return to C" : "Travel to C",
             startTime: timestamp,
             color: isReturning ? "#28B946" : "#32D74B",
+          };
+          break;
+
+        case "returningToC":
+          newActivity = {
+            id: `${travelerId}-returningToC-${timestamp}`,
+            travelerId,
+            name: "Return to C",
+            startTime: timestamp,
+            color: "#28B946",
           };
           break;
 
@@ -115,76 +120,6 @@ export const TimelineEventsProvider: React.FC<TimelineEventsProviderProps> = ({
           };
           break;
 
-        case "movingToB1":
-          const isSwitchingToB1 = [
-            "movingToB2",
-            "waitingAtB2",
-            "processingAtB2",
-          ].includes(previousStage);
-          newActivity = {
-            id: `${travelerId}-moveToB1-${timestamp}`,
-            travelerId,
-            name: isSwitchingToB1 ? "Switch to B1" : "Travel to B1",
-            startTime: timestamp,
-            color: isSwitchingToB1 ? "#9933FF" : "#007AFF",
-          };
-          break;
-
-        case "movingToB2":
-          const isSwitchingToB2 = [
-            "movingToB1",
-            "waitingAtB1",
-            "processingAtB1",
-          ].includes(previousStage);
-          newActivity = {
-            id: `${travelerId}-moveToB2-${timestamp}`,
-            travelerId,
-            name: isSwitchingToB2 ? "Switch to B2" : "Travel to B2",
-            startTime: timestamp,
-            color: isSwitchingToB2 ? "#CC33FF" : "#0099FF",
-          };
-          break;
-
-        case "waitingAtB1":
-          newActivity = {
-            id: `${travelerId}-waitingB1-${timestamp}`,
-            travelerId,
-            name: "Waiting at B1",
-            startTime: timestamp,
-            color: "#FF6B6B",
-          };
-          break;
-
-        case "waitingAtB2":
-          newActivity = {
-            id: `${travelerId}-waitingB2-${timestamp}`,
-            travelerId,
-            name: "Waiting at B2",
-            startTime: timestamp,
-            color: "#FF4444",
-          };
-          break;
-
-        case "processingAtB1":
-          newActivity = {
-            id: `${travelerId}-processingB1-${timestamp}`,
-            travelerId,
-            name: "Processing at B1",
-            startTime: timestamp,
-            color: "#FF9500",
-          };
-          break;
-
-        case "processingAtB2":
-          newActivity = {
-            id: `${travelerId}-processingB2-${timestamp}`,
-            travelerId,
-            name: "Processing at B2",
-            startTime: timestamp,
-            color: "#FF7700",
-          };
-          break;
-
         case "returningToA":
           newActivity = {
             id: `${travelerId}-return-${timestamp}`,
@@ -195,17 +130,54 @@ export const TimelineEventsProvider: React.FC<TimelineEventsProviderProps> = ({
           };
           break;
 
-        case "completed":
-          // Mark traveler as completed and end any ongoing activities
-          setCompletedTravelers((prev) => new Set([...prev, travelerId]));
-          setActivities((prev) =>
-            prev.map((activity) =>
-              activity.travelerId === travelerId && !activity.endTime
-                ? { ...activity, endTime: timestamp }
-                : activity
-            )
-          );
+        default:
+          // Handle dynamic station stages
+          if (stage.startsWith("movingTo") && stage !== "movingToC") {
+            const stationId = stage.replace("movingTo", "");
+            const isSwitching =
+              previousStage.startsWith("movingTo") ||
+              previousStage.startsWith("waitingAt") ||
+              previousStage.startsWith("processingAt");
+            newActivity = {
+              id: `${travelerId}-moveTo${stationId}-${timestamp}`,
+              travelerId,
+              name: isSwitching
+                ? `Switch to ${stationId}`
+                : `Travel to ${stationId}`,
+              startTime: timestamp,
+              color: isSwitching ? "#9933FF" : "#007AFF",
+            };
+          } else if (stage.startsWith("waitingAt")) {
+            const stationId = stage.replace("waitingAt", "");
+            newActivity = {
+              id: `${travelerId}-waiting${stationId}-${timestamp}`,
+              travelerId,
+              name: `Waiting at ${stationId}`,
+              startTime: timestamp,
+              color: "#FF6B6B",
+            };
+          } else if (stage.startsWith("processingAt")) {
+            const stationId = stage.replace("processingAt", "");
+            newActivity = {
+              id: `${travelerId}-processing${stationId}-${timestamp}`,
+              travelerId,
+              name: `Processing at ${stationId}`,
+              startTime: timestamp,
+              color: "#FF9500",
+            };
+          }
           break;
+      }
+
+      if (stage === "completed") {
+        setCompletedTravelers((prev) => new Set([...prev, travelerId]));
+        setActivities((prev) =>
+          prev.map((activity) =>
+            activity.travelerId === travelerId && !activity.endTime
+              ? { ...activity, endTime: timestamp }
+              : activity
+          )
+        );
       }
 
       if (newActivity) {
