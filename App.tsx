@@ -7,6 +7,7 @@ import { SimulationControls } from "./components/SimulationControls";
 import { GanttChart } from "./components/GanttChart";
 import React, { useState } from "react";
 import { useSimulation } from "./contexts/SimulationContext";
+import AppBanner from "./components/AppBanner";
 
 type TabType = "simulation" | "controls" | "timeline";
 
@@ -41,6 +42,15 @@ const AppContent: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <AppBanner
+        appName="Eventron"
+        appIcon={require("./assets/icon.png")}
+        privacyPolicyUrl=""
+        androidUrl=""
+        androidTestersGroupUrl=""
+        iosUrl=""
+      />
+
       <Text style={styles.title}>Person Movement Simulation</Text>
 
       {/* Tab Navigation */}
